@@ -293,3 +293,12 @@ build/MacNotificationBarkBridge.app
 - 真机上先用 `--dump-tree --once` 看你机器的通知中心树结构，再微调解析规则
 - 如果你只关心某个应用，优先配置 `sourceFilter`
 - 做解析规则回归时，优先保存快照夹具再写测试，避免每次都靠手工复现
+
+## License
+
+本项目使用 MIT 许可证，见 `LICENSE`。
+
+## Release Notes
+
+发布说明模板见 `docs/RELEASE_NOTES_TEMPLATE.md`。
+GitHub 自动生成发布说明的分类规则见 `.github/release.yml`。
