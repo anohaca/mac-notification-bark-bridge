@@ -95,10 +95,7 @@ struct BridgeService: Sendable {
         }
 
         for notification in fresh {
-            await logger.log(
-                .info,
-                "scan.notification source=\(notification.source) title=\(notification.title) body=\(notification.body.replacingOccurrences(of: "\n", with: " "))"
-            )
+            await logger.log(.info, notificationLogMessage(for: notification))
             guard !configuration.dryRun else {
                 continue
             }
@@ -112,6 +109,10 @@ struct BridgeService: Sendable {
         }
 
         return fresh
+    }
+
+    func notificationLogMessage(for notification: ForwardedNotification) -> String {
+        "scan.notification source=\(notification.source) title=\(notification.title) bodyLength=\(notification.body.count) bodyRedacted=true"
     }
 
     func logMessage(for notification: ForwardedNotification) -> String {

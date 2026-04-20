@@ -86,6 +86,9 @@ build/MacNotificationBarkBridge.app
 ~/Library/Application Support/MacNotificationBarkBridge/Logs/latest-tree.json
 ```
 
+默认情况下，`bridge.log` 不会记录通知正文，只会记录来源、标题和正文长度。
+但 `latest-tree.json` 仍然是原始辅助功能快照，可能包含完整通知内容；如果你要分享这个文件，请先自行脱敏。
+
 配置文件示例：
 
 ```json
