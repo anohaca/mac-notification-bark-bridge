@@ -116,7 +116,19 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate {
             let displayPath = NSString(string: configURL.path).abbreviatingWithTildeInPath
             configMenuItem.title = "配置：\(displayPath)"
 
-            let configuration = try configurationStore.load()
+            let storedConfiguration = try configurationStore.loadStoredConfiguration().normalized()
+            let configuration = try storedConfiguration.resolved()
+            do {
+                try LaunchAtLoginManager.setEnabled(configuration.launchAtLogin)
+            } catch {
+                Task {
+                    await logger.log(.error, "app.launch_at_login_failed enabled=\(configuration.launchAtLogin) error=\(describe(error))")
+                }
+                updateStatus(
+                    title: "状态：需要处理",
+                    detail: "开机自启设置失败，请把 App 放入“应用程序”后重试"
+                )
+            }
             self.configuration = configuration
             self.service = makeBridgeService(configuration: configuration, logger: logger)
 
@@ -128,7 +140,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate {
             Task {
                 await logger.log(
                     .info,
-                    "app.config_loaded filter=\(filterText) pollInterval=\(configuration.pollInterval) dryRun=\(configuration.dryRun)"
+                    "app.config_loaded filter=\(filterText) pollInterval=\(configuration.pollInterval) dryRun=\(configuration.dryRun) launchAtLogin=\(configuration.launchAtLogin)"
                 )
             }
 
@@ -316,10 +328,11 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate {
         if configurationWindowController == nil {
             configurationWindowController = ConfigurationWindowController(
                 configurationStore: configurationStore,
-                onSave: { [weak self] in
+                onSave: { [weak self] stored in
                     guard let self else {
                         return
                     }
+                    try LaunchAtLoginManager.setEnabled(stored.launchAtLogin == true)
                     self.refreshConfiguration(startMonitoring: self.isMonitoringEnabled)
                 },
                 onClose: { [weak self] in

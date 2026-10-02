@@ -50,6 +50,7 @@ enum AccessibilityPermissionSupport {
 }
 
 protocol NotificationSnapshotProviding: Sendable {
+    func isNotificationPanelVisible() async throws -> Bool
     func snapshot() async throws -> AccessibilityNode
 }
 
@@ -72,6 +73,15 @@ struct AccessibilityNotificationSnapshotProvider: NotificationSnapshotProviding 
         self.logger = logger
         self.maxDepth = maxDepth
         self.maxChildrenPerNode = maxChildrenPerNode
+    }
+
+    func isNotificationPanelVisible() async throws -> Bool {
+        try await requireAccessibilityPermission()
+
+        let root = try notificationCenterRoot()
+        let isVisible = notificationCenterPanelIsVisible(root: root)
+        await logPanelVisibilityIfNeeded(isVisible)
+        return isVisible
     }
 
     func snapshot() async throws -> AccessibilityNode {
@@ -250,6 +260,10 @@ struct AccessibilityNotificationSnapshotProvider: NotificationSnapshotProviding 
 
 struct FixtureSnapshotProvider: NotificationSnapshotProviding {
     let path: String
+
+    func isNotificationPanelVisible() async throws -> Bool {
+        false
+    }
 
     func snapshot() async throws -> AccessibilityNode {
         let data = try Data(contentsOf: URL(fileURLWithPath: path))

@@ -16,6 +16,31 @@ actor TestLogger: BridgeLogging {
     }
 }
 
+struct VisiblePanelSnapshotProvider: NotificationSnapshotProviding {
+    let tree: AccessibilityNode
+
+    func isNotificationPanelVisible() async throws -> Bool {
+        true
+    }
+
+    func snapshot() async throws -> AccessibilityNode {
+        Issue.record("snapshot() must not be called while Notification Center is visible")
+        return tree
+    }
+}
+
+actor SendCounter {
+    private var count = 0
+
+    func increment() {
+        count += 1
+    }
+
+    func value() -> Int {
+        count
+    }
+}
+
 @Test func bridgeServiceDryRunProcessesFixtureWithoutNetwork() async throws {
     let fixtureURL = try #require(Bundle.module.url(
         forResource: "sample-notification-tree",
@@ -33,7 +58,8 @@ actor TestLogger: BridgeLogging {
         dumpTree: false,
         fixturePath: fixtureURL.path,
         promptForAccessibility: false,
-        dedupeWindow: 300
+        dedupeWindow: 300,
+        launchAtLogin: false
     )
 
     let barkClient = BarkClient(
@@ -78,7 +104,8 @@ actor TestLogger: BridgeLogging {
         dumpTree: false,
         fixturePath: fixtureURL.path,
         promptForAccessibility: false,
-        dedupeWindow: 300
+        dedupeWindow: 300,
+        launchAtLogin: false
     )
 
     let logger = TestLogger()
@@ -113,4 +140,60 @@ actor TestLogger: BridgeLogging {
     #expect(notificationLog.contains("bodyRedacted=true"))
     #expect(notificationLog.contains("Meet at 8 PM") == false)
     #expect(notificationLog.contains("Bring the tickets.") == false)
+}
+
+@Test func bridgeServiceSkipsScanWhenNotificationCenterIsVisible() async throws {
+    let fixtureURL = try #require(Bundle.module.url(
+        forResource: "sample-notification-tree",
+        withExtension: "json",
+        subdirectory: "Fixtures"
+    ))
+    let tree = try JSONDecoder().decode(
+        AccessibilityNode.self,
+        from: Data(contentsOf: fixtureURL)
+    )
+
+    let configuration = AppConfiguration(
+        deviceKey: "test",
+        barkBaseURL: URL(string: "https://api.day.app")!,
+        sourceFilter: nil,
+        pollInterval: 1,
+        dryRun: false,
+        runOnce: true,
+        dumpTree: false,
+        fixturePath: nil,
+        promptForAccessibility: false,
+        dedupeWindow: 300,
+        launchAtLogin: false
+    )
+
+    let sendCounter = SendCounter()
+    let barkClient = BarkClient(
+        baseURL: configuration.barkBaseURL,
+        deviceKey: configuration.deviceKey,
+        sender: { _ in
+            await sendCounter.increment()
+            let response = HTTPURLResponse(
+                url: URL(string: "https://api.day.app/test")!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (Data(), response)
+        }
+    )
+    let logger = TestLogger()
+    var service = BridgeService(
+        configuration: configuration,
+        snapshotProvider: VisiblePanelSnapshotProvider(tree: tree),
+        barkClient: barkClient,
+        logger: logger
+    )
+
+    let notifications = try await service.runOnce()
+
+    #expect(notifications.isEmpty)
+    #expect(await sendCounter.value() == 0)
+    let messages = await logger.messages()
+    #expect(messages.contains { $0.contains("scan.skipped reason=notification_center_visible") })
 }

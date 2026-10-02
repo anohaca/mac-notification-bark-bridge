@@ -8,6 +8,7 @@ struct StoredConfiguration: Codable, Equatable, Sendable {
     var dryRun: Bool?
     var promptForAccessibility: Bool?
     var dedupeWindow: Double?
+    var launchAtLogin: Bool?
 
     static let defaults = StoredConfiguration(
         deviceKey: "",
@@ -16,7 +17,8 @@ struct StoredConfiguration: Codable, Equatable, Sendable {
         pollInterval: 2,
         dryRun: false,
         promptForAccessibility: true,
-        dedupeWindow: 300
+        dedupeWindow: 300,
+        launchAtLogin: false
     )
 
     func normalized() -> StoredConfiguration {
@@ -27,7 +29,8 @@ struct StoredConfiguration: Codable, Equatable, Sendable {
             pollInterval: pollInterval ?? Self.defaults.pollInterval,
             dryRun: dryRun ?? Self.defaults.dryRun,
             promptForAccessibility: promptForAccessibility ?? Self.defaults.promptForAccessibility,
-            dedupeWindow: dedupeWindow ?? Self.defaults.dedupeWindow
+            dedupeWindow: dedupeWindow ?? Self.defaults.dedupeWindow,
+            launchAtLogin: launchAtLogin ?? Self.defaults.launchAtLogin
         )
     }
 
@@ -91,7 +94,8 @@ struct StoredConfiguration: Codable, Equatable, Sendable {
             dumpTree: false,
             fixturePath: nil,
             promptForAccessibility: normalized.promptForAccessibility ?? true,
-            dedupeWindow: dedupe
+            dedupeWindow: dedupe,
+            launchAtLogin: normalized.launchAtLogin ?? false
         )
     }
 }

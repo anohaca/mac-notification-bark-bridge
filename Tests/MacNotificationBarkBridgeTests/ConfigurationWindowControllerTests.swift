@@ -22,14 +22,15 @@ import Testing
             pollInterval: 6,
             dryRun: true,
             promptForAccessibility: false,
-            dedupeWindow: 180
+            dedupeWindow: 180,
+            launchAtLogin: true
         )
     )
 
     var didSave = false
     let controller = ConfigurationWindowController(
         configurationStore: store,
-        onSave: { didSave = true },
+        onSave: { _ in didSave = true },
         onClose: {}
     )
 
@@ -38,6 +39,7 @@ import Testing
     #expect(loaded.sourceFilter == "Mail")
     #expect(loaded.pollInterval == 6)
     #expect(loaded.dryRun == true)
+    #expect(loaded.launchAtLogin == true)
 
     controller.populateFields(
         with: StoredConfiguration(
@@ -47,7 +49,8 @@ import Testing
             pollInterval: 3,
             dryRun: false,
             promptForAccessibility: true,
-            dedupeWindow: 45
+            dedupeWindow: 45,
+            launchAtLogin: false
         )
     )
 
@@ -61,5 +64,6 @@ import Testing
     #expect(saved.pollInterval == 3)
     #expect(saved.promptForAccessibility == true)
     #expect(saved.dedupeWindow == 45)
+    #expect(saved.launchAtLogin == false)
     #expect(controller.statusTextForTesting.contains("已保存") == true)
 }

@@ -4,7 +4,7 @@ import Foundation
 @MainActor
 final class ConfigurationWindowController: NSWindowController, NSWindowDelegate {
     private let configurationStore: ConfigurationStore
-    private let onSave: () -> Void
+    private let onSave: (StoredConfiguration) throws -> Void
     private let onClose: () -> Void
 
     private let deviceKeyField = NSTextField(string: "")
@@ -18,11 +18,16 @@ final class ConfigurationWindowController: NSWindowController, NSWindowDelegate 
         target: nil,
         action: nil
     )
+    private let launchAtLoginButton = NSButton(
+        checkboxWithTitle: "登录 macOS 时自动启动",
+        target: nil,
+        action: nil
+    )
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
 
     init(
         configurationStore: ConfigurationStore,
-        onSave: @escaping () -> Void,
+        onSave: @escaping (StoredConfiguration) throws -> Void,
         onClose: @escaping () -> Void
     ) {
         self.configurationStore = configurationStore
@@ -30,7 +35,7 @@ final class ConfigurationWindowController: NSWindowController, NSWindowDelegate 
         self.onClose = onClose
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 420),
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 450),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -89,7 +94,7 @@ final class ConfigurationWindowController: NSWindowController, NSWindowDelegate 
             grid.cell(atColumnIndex: 0, rowIndex: rowIndex).xPlacement = .trailing
         }
 
-        let toggles = NSStackView(views: [dryRunButton, promptAccessibilityButton])
+        let toggles = NSStackView(views: [dryRunButton, promptAccessibilityButton, launchAtLoginButton])
         toggles.orientation = .vertical
         toggles.spacing = 8
 
@@ -166,6 +171,7 @@ final class ConfigurationWindowController: NSWindowController, NSWindowDelegate 
         dedupeWindowField.stringValue = formatNumber(normalized.dedupeWindow ?? 300)
         dryRunButton.state = normalized.dryRun == true ? .on : .off
         promptAccessibilityButton.state = normalized.promptForAccessibility == false ? .off : .on
+        launchAtLoginButton.state = normalized.launchAtLogin == true ? .on : .off
     }
 
     private func formatNumber(_ value: Double) -> String {
@@ -191,7 +197,8 @@ final class ConfigurationWindowController: NSWindowController, NSWindowDelegate 
                 from: dedupeWindowField.stringValue,
                 fieldName: "去重窗口",
                 defaultValue: StoredConfiguration.defaults.dedupeWindow ?? 300
-            )
+            ),
+            launchAtLogin: launchAtLoginButton.state == .on
         )
     }
 
@@ -223,7 +230,7 @@ final class ConfigurationWindowController: NSWindowController, NSWindowDelegate 
     func saveCurrentForm() throws {
         let stored = try currentFormConfiguration()
         try configurationStore.save(stored)
-        onSave()
+        try onSave(stored.normalized())
         showStatus("已保存，监听状态已重新加载。", color: .systemGreen)
     }
 

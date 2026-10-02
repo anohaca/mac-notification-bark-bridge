@@ -27,6 +27,7 @@
 - 依赖“辅助功能”权限
 - 只能读取系统当前暴露出来的通知界面
 - 不会主动替你展开通知中心
+- 通知中心打开时只检查面板状态，不抓取、不解析，也不会转发其中的通知；关闭后才恢复扫描
 - 如果通知中心当前没有展开，能读到的节点会更少，某些通知可能抓不到
 
 换句话说，它适合“把 Mac 上可见通知同步到 iPhone”这类场景，但不是一个官方的“全量订阅所有系统通知”方案。
@@ -90,6 +91,10 @@ open build/MacNotificationBarkBridge.app
 
 - `deviceKey`
 
+如果希望登录 macOS 后自动运行，在设置窗口勾选“登录 macOS 时自动启动”。这个选项使用 macOS 登录项机制管理，也可以在“系统设置 > 通用 > 登录项”里查看或关闭。
+
+注意：开机自启需要从打包后的 `.app` 注册。建议先把 `MacNotificationBarkBridge.app` 放入“应用程序”文件夹；直接使用 `swift run` 调试时不能可靠注册登录项。
+
 ### 4. 授予辅助功能权限
 
 去这里开启权限：
@@ -147,6 +152,7 @@ build/MacNotificationBarkBridge.app
 | `dedupeWindow` | 去重窗口，单位秒，默认 `300` |
 | `dryRun` | 为 `true` 时只记日志，不真正调用 Bark |
 | `promptForAccessibility` | 是否在需要时主动触发系统辅助功能授权提示 |
+| `launchAtLogin` | 是否在登录 macOS 后自动启动 App，默认 `false` |
 
 如果 `deviceKey` 为空，菜单栏 app 仍然会启动，但会提示你补齐配置。
 

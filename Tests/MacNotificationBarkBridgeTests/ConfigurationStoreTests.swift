@@ -17,7 +17,8 @@ import Testing
               "pollInterval": 5,
               "dedupeWindow": 90,
               "dryRun": true,
-              "promptForAccessibility": false
+              "promptForAccessibility": false,
+              "launchAtLogin": true
             }
             """.data(using: .utf8)!
         }
@@ -33,6 +34,7 @@ import Testing
     #expect(configuration.dedupeWindow == 90)
     #expect(configuration.dryRun == true)
     #expect(configuration.promptForAccessibility == false)
+    #expect(configuration.launchAtLogin == true)
 }
 
 @Test func configurationStoreSavesAndLoadsEditableConfiguration() throws {
@@ -53,7 +55,8 @@ import Testing
         pollInterval: 4,
         dryRun: true,
         promptForAccessibility: false,
-        dedupeWindow: 120
+        dedupeWindow: 120,
+        launchAtLogin: true
     )
 
     try store.save(stored)
@@ -65,4 +68,17 @@ import Testing
     #expect(loaded.dryRun == true)
     #expect(loaded.promptForAccessibility == false)
     #expect(loaded.dedupeWindow == 120)
+    #expect(loaded.launchAtLogin == true)
+}
+
+@Test func oldConfigurationDefaultsLaunchAtLoginToFalse() throws {
+    let data = """
+    {
+      "deviceKey": "abc123",
+      "barkBaseURL": "https://api.day.app"
+    }
+    """.data(using: .utf8)!
+
+    let stored = try JSONDecoder().decode(StoredConfiguration.self, from: data).normalized()
+    #expect(stored.launchAtLogin == false)
 }

@@ -11,6 +11,7 @@ struct AppConfiguration: Equatable, Sendable {
     let fixturePath: String?
     let promptForAccessibility: Bool
     let dedupeWindow: TimeInterval
+    let launchAtLogin: Bool
 
     static func parse(
         arguments: [String] = ProcessInfo.processInfo.arguments,
@@ -103,7 +104,8 @@ struct AppConfiguration: Equatable, Sendable {
             dumpTree: dumpTree,
             fixturePath: fixturePath,
             promptForAccessibility: promptForAccessibility,
-            dedupeWindow: dedupeSeconds
+            dedupeWindow: dedupeSeconds,
+            launchAtLogin: false
         )
     }
 

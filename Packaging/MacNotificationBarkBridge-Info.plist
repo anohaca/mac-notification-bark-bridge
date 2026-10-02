@@ -6,7 +6,9 @@
     <string>en</string>
     <key>CFBundleExecutable</key>
     <string>mac-notification-bark-bridge</string>
-    <key>CFBundleIdentifier</key>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon.icns</string>
+	<key>CFBundleIdentifier</key>
     <string>local.codex.MacNotificationBarkBridge</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
