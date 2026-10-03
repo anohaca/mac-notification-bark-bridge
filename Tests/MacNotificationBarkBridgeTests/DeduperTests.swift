@@ -13,11 +13,17 @@ import Testing
 
     let first = deduper.filterNew([notification], now: Date(timeIntervalSince1970: 100))
     let second = deduper.filterNew([notification], now: Date(timeIntervalSince1970: 200))
-    let third = deduper.filterNew([notification], now: Date(timeIntervalSince1970: 450))
+    let changedNotification = ForwardedNotification(
+        source: "Messages",
+        title: "Alice",
+        body: "Meet at 9",
+        identifier: "n2"
+    )
+    let third = deduper.filterNew([changedNotification], now: Date(timeIntervalSince1970: 450))
 
     #expect(first == [notification])
     #expect(second.isEmpty)
-    #expect(third == [notification])
+    #expect(third == [changedNotification])
 }
 
 @Test func deduperIgnoresAccessibilityIdentifierChanges() {
@@ -56,4 +62,23 @@ import Testing
 
     #expect(deduper.filterNew([first], now: Date(timeIntervalSince1970: 100)) == [first])
     #expect(deduper.filterNew([rerendered], now: Date(timeIntervalSince1970: 101)).isEmpty)
+}
+
+@Test func deduperKeepsExactContentDedupedAfterWindow() {
+    var deduper = Deduper(window: 300)
+    let first = ForwardedNotification(
+        source: "Messages",
+        title: "Alice",
+        body: "Meet at 8",
+        identifier: "banner-1"
+    )
+    let sameContentLater = ForwardedNotification(
+        source: "Messages",
+        title: "Alice",
+        body: "Meet at 8",
+        identifier: "card-1"
+    )
+
+    #expect(deduper.filterNew([first], now: Date(timeIntervalSince1970: 100)) == [first])
+    #expect(deduper.filterNew([sameContentLater], now: Date(timeIntervalSince1970: 10_000)).isEmpty)
 }

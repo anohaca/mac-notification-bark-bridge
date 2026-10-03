@@ -126,26 +126,28 @@ struct BridgeService: Sendable {
 
 struct Deduper: Sendable {
     let window: TimeInterval
-    private var seen: [String: Date] = [:]
+    private var seenTitles: [String: Date] = [:]
+    private var seenExactContent: Set<String> = []
 
     init(window: TimeInterval) {
         self.window = window
     }
 
     mutating func filterNew(_ notifications: [ForwardedNotification], now: Date = Date()) -> [ForwardedNotification] {
-        purgeExpired(now: now)
+        seenTitles = seenTitles.filter { now.timeIntervalSince($0.value) < window }
 
         return notifications.filter { notification in
-            if seen[notification.dedupeSignature] != nil {
+            let exactContent = notification.titleBodySignature
+            if seenExactContent.contains(exactContent) {
                 return false
             }
-            seen[notification.dedupeSignature] = now
+            if seenTitles[notification.dedupeSignature] != nil {
+                return false
+            }
+            seenExactContent.insert(exactContent)
+            seenTitles[notification.dedupeSignature] = now
             return true
         }
-    }
-
-    private mutating func purgeExpired(now: Date) {
-        seen = seen.filter { now.timeIntervalSince($0.value) < window }
     }
 }
 

@@ -149,7 +149,7 @@ build/MacNotificationBarkBridge.app
 | `barkBaseURL` | Bark 服务地址，默认 `https://api.day.app` |
 | `sourceFilter` | 只转发来源、标题或正文中包含该文本的通知；留空表示不过滤 |
 | `pollInterval` | 轮询间隔，单位秒，默认 `2` |
-| `dedupeWindow` | 去重窗口，单位秒，默认 `300` |
+| `dedupeWindow` | 正文发生变化时的标题去重窗口，单位秒，默认 `300`；相同标题和正文在本次运行期间不会重复转发 |
 | `dryRun` | 为 `true` 时只记日志，不真正调用 Bark |
 | `promptForAccessibility` | 是否在需要时主动触发系统辅助功能授权提示 |
 | `launchAtLogin` | 是否在登录 macOS 后自动启动 App，默认 `false` |
