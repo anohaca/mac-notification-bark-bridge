@@ -16,7 +16,6 @@ struct BridgeService: Sendable {
     let logger: any BridgeLogging
     var deduper: Deduper
     private var lastScanSummary: ScanSummary?
-    private var lastPanelVisible: Bool?
 
     init(
         configuration: AppConfiguration,
@@ -32,7 +31,6 @@ struct BridgeService: Sendable {
         self.logger = logger
         self.deduper = Deduper(window: configuration.dedupeWindow)
         self.lastScanSummary = nil
-        self.lastPanelVisible = nil
     }
 
     mutating func run(log: (String) -> Void = { print($0) }) async throws {
@@ -74,19 +72,7 @@ struct BridgeService: Sendable {
 
         let notifications = parser.parse(from: tree, sourceFilter: configuration.sourceFilter)
         let panelVisible = tree.notificationPanelVisible
-        let panelJustOpened = panelVisible && lastPanelVisible == false
-        let fresh: [ForwardedNotification]
-        if panelJustOpened {
-            deduper.remember(notifications)
-            fresh = []
-            await logger.log(
-                .info,
-                "scan.baseline panel_open matches=\(notifications.count) forwarded=0"
-            )
-        } else {
-            fresh = deduper.filterNew(notifications)
-        }
-        lastPanelVisible = panelVisible
+        let fresh = deduper.filterNew(notifications)
         let summary = ScanSummary(
             panelVisible: panelVisible,
             topLevelChildren: tree.children.count,
@@ -155,13 +141,6 @@ struct Deduper: Sendable {
             }
             seen[notification.dedupeSignature] = now
             return true
-        }
-    }
-
-    mutating func remember(_ notifications: [ForwardedNotification], now: Date = Date()) {
-        purgeExpired(now: now)
-        for notification in notifications {
-            seen[notification.dedupeSignature] = now
         }
     }
 
