@@ -51,16 +51,6 @@ struct BridgeService: Sendable {
     }
 
     mutating func runOnce() async throws -> [ForwardedNotification] {
-        do {
-            if try await snapshotProvider.isNotificationPanelVisible() {
-                await logger.log(.info, "scan.skipped reason=notification_center_visible")
-                return []
-            }
-        } catch {
-            await logger.log(.error, "scan.panel_state_failed error=\(describe(error))")
-            throw error
-        }
-
         let tree: AccessibilityNode
         do {
             tree = try await snapshotProvider.snapshot()
@@ -145,10 +135,10 @@ struct Deduper: Sendable {
         seen = seen.filter { now.timeIntervalSince($0.value) < window }
 
         return notifications.filter { notification in
-            if seen[notification.signature] != nil {
+            if seen[notification.dedupeSignature] != nil {
                 return false
             }
-            seen[notification.signature] = now
+            seen[notification.dedupeSignature] = now
             return true
         }
     }
