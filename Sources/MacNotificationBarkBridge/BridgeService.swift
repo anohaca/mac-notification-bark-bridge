@@ -16,6 +16,7 @@ struct BridgeService: Sendable {
     let logger: any BridgeLogging
     var deduper: Deduper
     private var lastScanSummary: ScanSummary?
+    private var lastPanelVisible: Bool?
 
     init(
         configuration: AppConfiguration,
@@ -31,6 +32,7 @@ struct BridgeService: Sendable {
         self.logger = logger
         self.deduper = Deduper(window: configuration.dedupeWindow)
         self.lastScanSummary = nil
+        self.lastPanelVisible = nil
     }
 
     mutating func run(log: (String) -> Void = { print($0) }) async throws {
@@ -71,9 +73,22 @@ struct BridgeService: Sendable {
         }
 
         let notifications = parser.parse(from: tree, sourceFilter: configuration.sourceFilter)
-        let fresh = deduper.filterNew(notifications)
+        let panelVisible = tree.notificationPanelVisible
+        let panelJustOpened = panelVisible && lastPanelVisible == false
+        let fresh: [ForwardedNotification]
+        if panelJustOpened {
+            deduper.remember(notifications)
+            fresh = []
+            await logger.log(
+                .info,
+                "scan.baseline panel_open matches=\(notifications.count) forwarded=0"
+            )
+        } else {
+            fresh = deduper.filterNew(notifications)
+        }
+        lastPanelVisible = panelVisible
         let summary = ScanSummary(
-            panelVisible: tree.notificationPanelVisible,
+            panelVisible: panelVisible,
             topLevelChildren: tree.children.count,
             totalNodes: tree.totalNodeCount,
             matches: notifications.count,
@@ -132,7 +147,7 @@ struct Deduper: Sendable {
     }
 
     mutating func filterNew(_ notifications: [ForwardedNotification], now: Date = Date()) -> [ForwardedNotification] {
-        seen = seen.filter { now.timeIntervalSince($0.value) < window }
+        purgeExpired(now: now)
 
         return notifications.filter { notification in
             if seen[notification.dedupeSignature] != nil {
@@ -141,6 +156,17 @@ struct Deduper: Sendable {
             seen[notification.dedupeSignature] = now
             return true
         }
+    }
+
+    mutating func remember(_ notifications: [ForwardedNotification], now: Date = Date()) {
+        purgeExpired(now: now)
+        for notification in notifications {
+            seen[notification.dedupeSignature] = now
+        }
+    }
+
+    private mutating func purgeExpired(now: Date) {
+        seen = seen.filter { now.timeIntervalSince($0.value) < window }
     }
 }
 

@@ -79,9 +79,10 @@ struct ForwardedNotification: Equatable, Hashable, Sendable {
         ].joined(separator: "|")
     }
 
-    // Accessibility identifiers can change when Notification Center switches views.
+    // Accessibility identifiers and bodies can change when Notification Center re-renders a card.
     var dedupeSignature: String {
-        titleBodySignature
+        let titleFingerprint = title.fingerprint
+        return titleFingerprint.isEmpty ? contentSignature : titleFingerprint
     }
 
     var usesFallbackSource: Bool {
