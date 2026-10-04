@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 struct AccessibilityNode: Codable, Equatable, Sendable {
@@ -80,9 +81,8 @@ struct ForwardedNotification: Equatable, Hashable, Sendable {
     }
 
     // Accessibility identifiers and bodies can change when Notification Center re-renders a card.
-    var dedupeSignature: String {
-        let titleFingerprint = title.fingerprint
-        return titleFingerprint.isEmpty ? contentSignature : titleFingerprint
+    var exactDedupeHash: String {
+        titleBodySignature.sha256
     }
 
     var usesFallbackSource: Bool {
@@ -94,6 +94,12 @@ struct ForwardedNotification: Equatable, Hashable, Sendable {
             return source
         }
         return "\(source) | \(title)"
+    }
+}
+
+private extension String {
+    var sha256: String {
+        SHA256.hash(data: Data(utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }
 

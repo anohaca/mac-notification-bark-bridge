@@ -45,7 +45,7 @@ import Testing
     #expect(deduper.filterNew([sameNotificationInNotificationCenter], now: Date(timeIntervalSince1970: 101)).isEmpty)
 }
 
-@Test func deduperIgnoresBodyChangesForTheSameTitle() {
+@Test func deduperTreatsBodyChangesAsNewMessages() {
     var deduper = Deduper(window: 300)
     let first = ForwardedNotification(
         source: "ChatGPT",
@@ -61,10 +61,10 @@ import Testing
     )
 
     #expect(deduper.filterNew([first], now: Date(timeIntervalSince1970: 100)) == [first])
-    #expect(deduper.filterNew([rerendered], now: Date(timeIntervalSince1970: 101)).isEmpty)
+    #expect(deduper.filterNew([rerendered], now: Date(timeIntervalSince1970: 101)) == [rerendered])
 }
 
-@Test func deduperKeepsExactContentDedupedAfterWindow() {
+@Test func deduperExpiresExactHashAfterWindow() {
     var deduper = Deduper(window: 300)
     let first = ForwardedNotification(
         source: "Messages",
@@ -80,5 +80,18 @@ import Testing
     )
 
     #expect(deduper.filterNew([first], now: Date(timeIntervalSince1970: 100)) == [first])
-    #expect(deduper.filterNew([sameContentLater], now: Date(timeIntervalSince1970: 10_000)).isEmpty)
+    #expect(deduper.filterNew([sameContentLater], now: Date(timeIntervalSince1970: 200)).isEmpty)
+    #expect(deduper.filterNew([sameContentLater], now: Date(timeIntervalSince1970: 450)) == [sameContentLater])
+}
+
+@Test func notificationDedupeKeysAreHashes() {
+    let notification = ForwardedNotification(
+        source: "Messages",
+        title: "Alice",
+        body: "Meet at 8",
+        identifier: "card-1"
+    )
+
+    #expect(notification.exactDedupeHash.count == 64)
+    #expect(notification.exactDedupeHash.contains("Meet at 8") == false)
 }
