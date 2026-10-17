@@ -81,4 +81,6 @@ import Testing
 
     let stored = try JSONDecoder().decode(StoredConfiguration.self, from: data).normalized()
     #expect(stored.launchAtLogin == false)
+    #expect(stored.monitorPasswordPrompts == true)
+    #expect(stored.maxNotificationAge == 120)
 }

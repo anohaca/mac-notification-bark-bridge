@@ -12,6 +12,7 @@ final class ConfigurationWindowController: NSWindowController, NSWindowDelegate 
     private let sourceFilterField = NSTextField(string: "")
     private let pollIntervalField = NSTextField(string: "")
     private let dedupeWindowField = NSTextField(string: "")
+    private let maxNotificationAgeField = NSTextField(string: "")
     private let dryRunButton = NSButton(checkboxWithTitle: "仅调试，不发送 Bark", target: nil, action: nil)
     private let promptAccessibilityButton = NSButton(
         checkboxWithTitle: "需要时请求辅助功能权限",
@@ -22,6 +23,9 @@ final class ConfigurationWindowController: NSWindowController, NSWindowDelegate 
         checkboxWithTitle: "登录 macOS 时自动启动",
         target: nil,
         action: nil
+    )
+    private let passwordPromptsButton = NSButton(
+        checkboxWithTitle: "密码或系统授权弹窗出现时提醒", target: nil, action: nil
     )
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
 
@@ -35,7 +39,7 @@ final class ConfigurationWindowController: NSWindowController, NSWindowDelegate 
         self.onClose = onClose
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 450),
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 540),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -72,6 +76,8 @@ final class ConfigurationWindowController: NSWindowController, NSWindowDelegate 
         sourceFilterField.placeholderString = "消息、Slack、邮件…"
         pollIntervalField.placeholderString = "2"
         dedupeWindowField.placeholderString = "300"
+        maxNotificationAgeField.placeholderString = "120（0 表示不限制）"
+        maxNotificationAgeField.toolTip = "默认 120 秒；0 表示不限制。时间未知的通知仍转发，并记入日志。"
 
         let introLabel = NSTextField(wrappingLabelWithString:
             "在这里修改转发配置。保存后会重写配置文件，并立即重新加载监听状态。"
@@ -84,17 +90,18 @@ final class ConfigurationWindowController: NSWindowController, NSWindowDelegate 
             [label("来源过滤"), sourceFilterField],
             [label("轮询间隔（秒）"), pollIntervalField],
             [label("去重窗口（秒）"), dedupeWindowField],
+            [label("通知有效时间（秒）"), maxNotificationAgeField],
         ])
         grid.rowSpacing = 10
         grid.columnSpacing = 14
         grid.xPlacement = .leading
         grid.row(at: 0).topPadding = 0
 
-        for rowIndex in 0..<5 {
+        for rowIndex in 0..<6 {
             grid.cell(atColumnIndex: 0, rowIndex: rowIndex).xPlacement = .trailing
         }
 
-        let toggles = NSStackView(views: [dryRunButton, promptAccessibilityButton, launchAtLoginButton])
+        let toggles = NSStackView(views: [dryRunButton, promptAccessibilityButton, launchAtLoginButton, passwordPromptsButton])
         toggles.orientation = .vertical
         toggles.spacing = 8
 
@@ -131,6 +138,7 @@ final class ConfigurationWindowController: NSWindowController, NSWindowDelegate 
             sourceFilterField.widthAnchor.constraint(equalToConstant: 320),
             pollIntervalField.widthAnchor.constraint(equalToConstant: 120),
             dedupeWindowField.widthAnchor.constraint(equalToConstant: 120),
+            maxNotificationAgeField.widthAnchor.constraint(equalToConstant: 220),
         ])
 
         return contentView
@@ -169,13 +177,15 @@ final class ConfigurationWindowController: NSWindowController, NSWindowDelegate 
         sourceFilterField.stringValue = normalized.sourceFilter ?? ""
         pollIntervalField.stringValue = formatNumber(normalized.pollInterval ?? 2)
         dedupeWindowField.stringValue = formatNumber(normalized.dedupeWindow ?? 300)
+        maxNotificationAgeField.stringValue = formatNumber(normalized.maxNotificationAge ?? 120)
         dryRunButton.state = normalized.dryRun == true ? .on : .off
         promptAccessibilityButton.state = normalized.promptForAccessibility == false ? .off : .on
         launchAtLoginButton.state = normalized.launchAtLogin == true ? .on : .off
+        passwordPromptsButton.state = normalized.monitorPasswordPrompts == true ? .on : .off
     }
 
     private func formatNumber(_ value: Double) -> String {
-        if value.rounded() == value {
+        if value.isFinite, value >= Double(Int.min), value < Double(Int.max), value.rounded() == value {
             return String(Int(value))
         }
         return String(value)
@@ -198,7 +208,9 @@ final class ConfigurationWindowController: NSWindowController, NSWindowDelegate 
                 fieldName: "去重窗口",
                 defaultValue: StoredConfiguration.defaults.dedupeWindow ?? 300
             ),
-            launchAtLogin: launchAtLoginButton.state == .on
+            launchAtLogin: launchAtLoginButton.state == .on,
+            monitorPasswordPrompts: passwordPromptsButton.state == .on,
+            maxNotificationAge: try parseNumber(from: maxNotificationAgeField.stringValue, fieldName: "通知有效时间", defaultValue: 120)
         )
     }
 

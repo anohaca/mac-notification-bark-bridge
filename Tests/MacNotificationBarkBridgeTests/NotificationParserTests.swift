@@ -37,7 +37,7 @@ import Testing
                         children: [
                             AccessibilityNode(role: "AXStaticText", value: "编写监听应用通知的Swift后台程序"),
                             AccessibilityNode(role: "AXStaticText", value: "\(longBody) "),
-                            AccessibilityNode(role: "AXStaticText", value: "15分钟前"),
+                            AccessibilityNode(role: "AXDateTimeArea", value: "15分钟前"),
                         ]
                     )
                 ]

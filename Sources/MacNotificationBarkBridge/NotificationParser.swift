@@ -34,12 +34,23 @@ struct NotificationParser: Sendable {
         "刚刚",
     ]
 
-    func parse(from root: AccessibilityNode, sourceFilter: String?) -> [ForwardedNotification] {
+    func parse(from root: AccessibilityNode, sourceFilter: String?, now: Date = Date()) -> [ForwardedNotification] {
         let filter = sourceFilter?.fingerprint
-        let matches = collectCandidates(from: root, filter: filter)
+        let matches = collectCandidates(from: root, now: now)
 
-        var exactSeen = Set<String>()
-        let exactUnique = matches.filter { exactSeen.insert($0.signature).inserted }
+        var indices: [String: Int] = [:]
+        var exactUnique: [ForwardedNotification] = []
+        for notification in matches {
+            if let index = indices[notification.signature] {
+                // Prefer real time metadata over an undated representation of the same node.
+                if exactUnique[index].timestamp == nil && notification.timestamp != nil {
+                    exactUnique[index] = notification
+                }
+            } else {
+                indices[notification.signature] = exactUnique.count
+                exactUnique.append(notification)
+            }
+        }
         let strongerTitleBodySignatures = Set(
             exactUnique
                 .filter { !$0.usesFallbackSource }
@@ -52,42 +63,68 @@ struct NotificationParser: Sendable {
             }
 
             return !strongerTitleBodySignatures.contains(notification.titleBodySignature)
-        }
+        }.filter { matchesFilter($0, filter: filter) }
     }
 
     private func collectCandidates(
         from node: AccessibilityNode,
-        filter: String?
+        now: Date
     ) -> [ForwardedNotification] {
-        let childMatches = node.children.flatMap { child in
-            collectCandidates(from: child, filter: filter)
-        }
-
-        if let notification = candidate(from: node), matchesFilter(notification, filter: filter) {
-            let childContentSignatures = Set(childMatches.map(\.contentSignature))
-            if !childContentSignatures.contains(notification.contentSignature) {
-                return childMatches + [notification]
+        if let subrole = node.subrole, notificationSubroles.contains(subrole) {
+            let nestedCards = node.children.flatMap { notificationContainers(in: $0) }
+            if !nestedCards.isEmpty {
+                return nestedCards.flatMap { collectCandidates(from: $0, now: now) }
             }
+            // Parse a card as one unit, so nested content groups cannot lose its metadata.
+            return candidate(from: node, now: now).map { [$0] } ?? []
         }
-
-        return childMatches
+        let childMatches = node.children.flatMap { collectCandidates(from: $0, now: now) }
+        if !childMatches.isEmpty { return childMatches }
+        return candidate(from: node, now: now).map { [$0] } ?? []
     }
 
-    private func candidate(from node: AccessibilityNode) -> ForwardedNotification? {
+    private func notificationContainers(in node: AccessibilityNode) -> [AccessibilityNode] {
+        if let subrole = node.subrole, notificationSubroles.contains(subrole) { return [node] }
+        return node.children.flatMap { notificationContainers(in: $0) }
+    }
+
+    private func isTimeNode(_ node: AccessibilityNode) -> Bool {
+        let roles: Set<String> = ["AXDateTimeArea", "AXDateField", "AXTimeField"]
+        if roles.contains(node.role ?? "") || roles.contains(node.subrole ?? "") { return true }
+        guard let identifier = node.identifier?.lowercased() else { return false }
+        return identifier.range(
+            of: #"(?:^|[._-])(?:date|time|timestamp|datelabel|timelabel|notificationdate|notificationtime)$"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    private func timestamp(in node: AccessibilityNode, now: Date) -> Date? {
+        if isTimeNode(node) {
+            let parser = NotificationTimeParser()
+            return [node.value, node.title, node.nodeDescription].compactMap { $0 }
+                .compactMap { parser.date(from: $0, now: now) }.min()
+        }
+        return node.children.compactMap { timestamp(in: $0, now: now) }.min()
+    }
+
+    private func candidate(from node: AccessibilityNode, now: Date) -> ForwardedNotification? {
         guard let role = node.role, containerRoles.contains(role) else {
             return nil
         }
 
-        let texts = leafTexts(in: node)
+        let rawTexts = leafTexts(in: node)
             .map(cleanText)
             .filter { !$0.isEmpty }
+        let timestamp = timestamp(in: node, now: now)
+        let texts = rawTexts
             .filter { !ignoredExactTexts.contains($0) }
-            .filter { !looksLikeRelativeTime($0) }
             .stableUniqued()
 
         if let subrole = node.subrole, notificationSubroles.contains(subrole) {
-            return notificationCenterCandidate(from: node, texts: texts)
+            return notificationCenterCandidate(from: node, texts: texts, timestamp: timestamp)
         }
+
+        guard role == "AXGroup" || role == "AXRow" else { return nil }
 
         guard texts.count >= 2, texts.count <= 6 else {
             return nil
@@ -118,13 +155,15 @@ struct NotificationParser: Sendable {
             source: source,
             title: title,
             body: body,
-            identifier: node.identifier
+            identifier: node.identifier,
+            timestamp: timestamp
         )
     }
 
     private func notificationCenterCandidate(
         from node: AccessibilityNode,
-        texts: [String]
+        texts: [String],
+        timestamp: Date?
     ) -> ForwardedNotification? {
         guard texts.count >= 2 else {
             return nil
@@ -142,7 +181,8 @@ struct NotificationParser: Sendable {
             source: source,
             title: title,
             body: body,
-            identifier: node.identifier
+            identifier: node.identifier,
+            timestamp: timestamp
         )
     }
 
@@ -176,6 +216,7 @@ struct NotificationParser: Sendable {
     }
 
     private func leafTexts(in node: AccessibilityNode) -> [String] {
+        if isTimeNode(node) { return [] }
         if node.children.isEmpty {
             return [node.title, node.value, node.nodeDescription].compactMap { $0 }
         }
@@ -202,17 +243,4 @@ struct NotificationParser: Sendable {
         return haystack.contains(filter)
     }
 
-    private func looksLikeRelativeTime(_ text: String) -> Bool {
-        let value = text.fingerprint
-
-        let patterns = [
-            #"^\d{1,2}:\d{2}$"#,
-            #"^\d+\s?(m|min|mins|minute|minutes|h|hr|hrs|hour|hours|s|sec|secs|second|seconds)\s?(ago)?$"#,
-            #"^(刚刚|\d+分钟前|\d+小时前)$"#,
-        ]
-
-        return patterns.contains { pattern in
-            value.range(of: pattern, options: .regularExpression) != nil
-        }
-    }
 }

@@ -9,6 +9,8 @@ struct StoredConfiguration: Codable, Equatable, Sendable {
     var promptForAccessibility: Bool?
     var dedupeWindow: Double?
     var launchAtLogin: Bool?
+    var monitorPasswordPrompts: Bool?
+    var maxNotificationAge: Double?
 
     static let defaults = StoredConfiguration(
         deviceKey: "",
@@ -18,7 +20,9 @@ struct StoredConfiguration: Codable, Equatable, Sendable {
         dryRun: false,
         promptForAccessibility: true,
         dedupeWindow: 300,
-        launchAtLogin: false
+        launchAtLogin: false,
+        monitorPasswordPrompts: true,
+        maxNotificationAge: 120
     )
 
     func normalized() -> StoredConfiguration {
@@ -30,12 +34,17 @@ struct StoredConfiguration: Codable, Equatable, Sendable {
             dryRun: dryRun ?? Self.defaults.dryRun,
             promptForAccessibility: promptForAccessibility ?? Self.defaults.promptForAccessibility,
             dedupeWindow: dedupeWindow ?? Self.defaults.dedupeWindow,
-            launchAtLogin: launchAtLogin ?? Self.defaults.launchAtLogin
+            launchAtLogin: launchAtLogin ?? Self.defaults.launchAtLogin,
+            monitorPasswordPrompts: monitorPasswordPrompts ?? Self.defaults.monitorPasswordPrompts,
+            maxNotificationAge: maxNotificationAge ?? Self.defaults.maxNotificationAge
         )
     }
 
     func validateForPersistence() throws {
         let normalized = normalized()
+        if let maxAge = normalized.maxNotificationAge, !maxAge.isFinite || maxAge < 0 {
+            throw BridgeError.invalidFieldValue(field: "通知有效时间", reason: "请输入大于或等于 0 的有限秒数。")
+        }
 
         if let baseURL = normalized.barkBaseURL,
            URL(string: baseURL) == nil {
@@ -63,6 +72,7 @@ struct StoredConfiguration: Codable, Equatable, Sendable {
     }
 
     func resolved() throws -> AppConfiguration {
+        try validateForPersistence()
         let normalized = normalized()
         let trimmedDeviceKey = normalized.deviceKey ?? ""
         guard !trimmedDeviceKey.isEmpty else {
@@ -95,7 +105,9 @@ struct StoredConfiguration: Codable, Equatable, Sendable {
             fixturePath: nil,
             promptForAccessibility: normalized.promptForAccessibility ?? true,
             dedupeWindow: dedupe,
-            launchAtLogin: normalized.launchAtLogin ?? false
+            launchAtLogin: normalized.launchAtLogin ?? false,
+            monitorPasswordPrompts: normalized.monitorPasswordPrompts ?? true,
+            maxNotificationAge: normalized.maxNotificationAge ?? 120
         )
     }
 }

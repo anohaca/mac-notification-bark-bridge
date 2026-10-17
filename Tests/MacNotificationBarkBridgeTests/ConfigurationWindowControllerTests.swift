@@ -23,7 +23,9 @@ import Testing
             dryRun: true,
             promptForAccessibility: false,
             dedupeWindow: 180,
-            launchAtLogin: true
+            launchAtLogin: true,
+            monitorPasswordPrompts: true,
+            maxNotificationAge: 180
         )
     )
 
@@ -35,11 +37,16 @@ import Testing
     )
 
     let loaded = try controller.currentFormConfiguration().normalized()
+    let contentView = try #require(controller.window?.contentView)
+    contentView.layoutSubtreeIfNeeded()
+    #expect(contentView.fittingSize.height <= contentView.bounds.height)
     #expect(loaded.deviceKey == "initial-key")
     #expect(loaded.sourceFilter == "Mail")
     #expect(loaded.pollInterval == 6)
     #expect(loaded.dryRun == true)
     #expect(loaded.launchAtLogin == true)
+    #expect(loaded.monitorPasswordPrompts == true)
+    #expect(loaded.maxNotificationAge == 180)
 
     controller.populateFields(
         with: StoredConfiguration(
@@ -50,7 +57,9 @@ import Testing
             dryRun: false,
             promptForAccessibility: true,
             dedupeWindow: 45,
-            launchAtLogin: false
+            launchAtLogin: false,
+            monitorPasswordPrompts: false,
+            maxNotificationAge: 45
         )
     )
 
@@ -65,5 +74,7 @@ import Testing
     #expect(saved.promptForAccessibility == true)
     #expect(saved.dedupeWindow == 45)
     #expect(saved.launchAtLogin == false)
+    #expect(saved.monitorPasswordPrompts == false)
+    #expect(saved.maxNotificationAge == 45)
     #expect(controller.statusTextForTesting.contains("已保存") == true)
 }

@@ -67,6 +67,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate {
     private var service: BridgeService?
     private var pollingTask: Task<Void, Never>?
     private var isMonitoringEnabled = true
+    private var isCycleRunning = false
     private var configurationWindowController: ConfigurationWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -140,7 +141,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate {
             Task {
                 await logger.log(
                     .info,
-                    "app.config_loaded filter=\(filterText) pollInterval=\(configuration.pollInterval) dryRun=\(configuration.dryRun) launchAtLogin=\(configuration.launchAtLogin)"
+                    "app.config_loaded filter=\(filterText) pollInterval=\(configuration.pollInterval) dryRun=\(configuration.dryRun) launchAtLogin=\(configuration.launchAtLogin) monitorPasswordPrompts=\(configuration.monitorPasswordPrompts) maxNotificationAge=\(configuration.maxNotificationAge)"
                 )
             }
 
@@ -224,12 +225,21 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func runCycle() async throws -> [ForwardedNotification] {
-        guard var service else {
+        guard !isCycleRunning, var service else {
             return []
         }
-
+        isCycleRunning = true
+        defer {
+            // Preserve successful sends even if a later scan or request throws.
+            if self.configuration == service.configuration {
+                self.service?.passwordPromptTracker = service.passwordPromptTracker
+            }
+            isCycleRunning = false
+        }
         let notifications = try await service.runOnce()
-        self.service = service
+        if self.configuration == service.configuration {
+            self.service = service
+        }
         return notifications
     }
 

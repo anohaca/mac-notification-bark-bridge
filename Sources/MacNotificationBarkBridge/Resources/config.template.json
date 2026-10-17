@@ -6,5 +6,7 @@
   "dedupeWindow": 300,
   "dryRun": false,
   "promptForAccessibility": true,
-  "launchAtLogin": false
+  "launchAtLogin": false,
+  "monitorPasswordPrompts": true,
+  "maxNotificationAge": 120
 }

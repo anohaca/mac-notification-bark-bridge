@@ -6,6 +6,7 @@ struct BridgeService: Sendable {
         let topLevelChildren: Int
         let totalNodes: Int
         let matches: Int
+        let eligible: Int
         let fresh: Int
     }
 
@@ -16,13 +17,19 @@ struct BridgeService: Sendable {
     let logger: any BridgeLogging
     var deduper: Deduper
     private var lastScanSummary: ScanSummary?
+    private let passwordPromptProvider: (any PasswordPromptProviding)?
+    var passwordPromptTracker = PasswordPromptTracker()
+    private var lastPromptScanError: String?
+    private var lastPromptScanSummary: String?
+    private var lastAgeFilterSummary: String?
 
     init(
         configuration: AppConfiguration,
         snapshotProvider: any NotificationSnapshotProviding,
         parser: NotificationParser = NotificationParser(),
         barkClient: BarkClient,
-        logger: any BridgeLogging = NoopBridgeLogger()
+        logger: any BridgeLogging = NoopBridgeLogger(),
+        passwordPromptProvider: (any PasswordPromptProviding)? = nil
     ) {
         self.configuration = configuration
         self.snapshotProvider = snapshotProvider
@@ -31,6 +38,7 @@ struct BridgeService: Sendable {
         self.logger = logger
         self.deduper = Deduper(window: configuration.dedupeWindow)
         self.lastScanSummary = nil
+        self.passwordPromptProvider = passwordPromptProvider
     }
 
     mutating func run(log: (String) -> Void = { print($0) }) async throws {
@@ -51,6 +59,7 @@ struct BridgeService: Sendable {
     }
 
     mutating func runOnce() async throws -> [ForwardedNotification] {
+        let promptNotifications = try await forwardPasswordPrompts()
         let tree: AccessibilityNode
         do {
             tree = try await snapshotProvider.snapshot()
@@ -70,14 +79,29 @@ struct BridgeService: Sendable {
             }
         }
 
-        let notifications = parser.parse(from: tree, sourceFilter: configuration.sourceFilter)
+        let scanTime = Date()
+        let notifications = parser.parse(from: tree, sourceFilter: configuration.sourceFilter, now: scanTime)
+        let agePolicy = NotificationAgePolicy(maxAge: configuration.maxNotificationAge)
+        var rejections: [String: Int] = [:]
+        let eligible = notifications.filter { notification in
+            guard let reason = agePolicy.rejectionReason(timestamp: notification.timestamp, now: scanTime) else { return true }
+            rejections[reason, default: 0] += 1
+            return false
+        }
+        let unknownCount = notifications.filter { $0.timestamp == nil }.count
+        let ageSummary = "scan.age_filter allowed=\(eligible.count) expired=\(rejections["expired", default: 0]) timeUnknown=\(unknownCount) future=\(rejections["time_in_future", default: 0]) invalidTime=\(rejections["time_invalid", default: 0]) maxAgeSeconds=\(configuration.maxNotificationAge) unknownPolicy=forward"
+        if ageSummary != lastAgeFilterSummary {
+            await logger.log(.info, ageSummary)
+            lastAgeFilterSummary = ageSummary
+        }
         let panelVisible = tree.notificationPanelVisible
-        let fresh = deduper.filterNew(notifications)
+        let fresh = deduper.filterNew(eligible)
         let summary = ScanSummary(
             panelVisible: panelVisible,
             topLevelChildren: tree.children.count,
             totalNodes: tree.totalNodeCount,
             matches: notifications.count,
+            eligible: eligible.count,
             fresh: fresh.count
         )
         if summary != lastScanSummary {
@@ -87,7 +111,7 @@ struct BridgeService: Sendable {
             )
             await logger.log(
                 .info,
-                "scan.parsed matches=\(notifications.count) fresh=\(fresh.count) deduped=\(notifications.count - fresh.count)"
+                "scan.parsed matches=\(notifications.count) eligible=\(eligible.count) fresh=\(fresh.count) deduped=\(eligible.count - fresh.count)"
             )
             if summary.panelVisible && notifications.isEmpty {
                 await logger.log(.warning, "scan.zero_matches latestSnapshotUpdated=true")
@@ -95,13 +119,23 @@ struct BridgeService: Sendable {
             lastScanSummary = summary
         }
 
+        var delivered: [ForwardedNotification] = []
         for notification in fresh {
+            if let reason = agePolicy.rejectionReason(timestamp: notification.timestamp, now: Date()) {
+                await logger.log(.info, "scan.not_sent reason=\(reason) hash=\(notification.exactDedupeHash)")
+                continue
+            }
             await logger.log(.info, notificationLogMessage(for: notification))
+            if notification.timestamp == nil {
+                await logger.log(.info, "scan.time_unknown action=forward hash=\(notification.exactDedupeHash)")
+            }
             guard !configuration.dryRun else {
+                delivered.append(notification)
                 continue
             }
             do {
                 try await barkClient.send(notification)
+                delivered.append(notification)
                 await logger.log(.info, "scan.forwarded title=\(notification.barkTitle)")
             } catch {
                 await logger.log(.error, "scan.forward_failed title=\(notification.barkTitle) error=\(describe(error))")
@@ -109,7 +143,47 @@ struct BridgeService: Sendable {
             }
         }
 
-        return fresh
+        return promptNotifications + delivered
+    }
+
+    private mutating func forwardPasswordPrompts() async throws -> [ForwardedNotification] {
+        guard configuration.monitorPasswordPrompts, let passwordPromptProvider else { return [] }
+        let snapshot: PasswordPromptSnapshot
+        do {
+            snapshot = try await passwordPromptProvider.snapshot()
+            if lastPromptScanError != nil { await logger.log(.info, "prompt.scan_recovered") }
+            lastPromptScanError = nil
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            let message = describe(error)
+            if message != lastPromptScanError {
+                await logger.log(.error, "prompt.scan_failed error=\(message)")
+                lastPromptScanError = message
+            }
+            return []
+        }
+        let pending = passwordPromptTracker.pending(in: snapshot)
+        let summary = "prompt.scan matches=\(snapshot.prompts.count) pending=\(pending.count)"
+        if summary != lastPromptScanSummary {
+            await logger.log(.info, "\(summary) uncertainProcesses=\(snapshot.uncertainProcessIDs.count)")
+            lastPromptScanSummary = summary
+        }
+        var forwarded: [ForwardedNotification] = []
+        for prompt in pending {
+            try Task.checkCancellation()
+            do {
+                if !configuration.dryRun { try await barkClient.send(prompt.notification) }
+                passwordPromptTracker.markSent(prompt)
+                forwarded.append(prompt.notification)
+                await logger.log(.info, "prompt.\(configuration.dryRun ? "detected" : "forwarded") app=\(prompt.applicationName) pid=\(prompt.processID)")
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                await logger.log(.error, "prompt.forward_failed app=\(prompt.applicationName) error=\(describe(error))")
+            }
+        }
+        return forwarded
     }
 
     func notificationLogMessage(for notification: ForwardedNotification) -> String {
@@ -169,6 +243,7 @@ func makeBridgeService(
         configuration: configuration,
         snapshotProvider: snapshotProvider,
         barkClient: barkClient,
-        logger: logger
+        logger: logger,
+        passwordPromptProvider: configuration.fixturePath == nil ? AccessibilityPasswordPromptProvider() : nil
     )
 }

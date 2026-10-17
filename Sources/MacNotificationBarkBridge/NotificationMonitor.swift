@@ -228,6 +228,9 @@ struct AccessibilityNotificationSnapshotProvider: NotificationSnapshotProviding 
         if CFGetTypeID(rawValue) == CFStringGetTypeID() {
             return rawValue as? String
         }
+        if CFGetTypeID(rawValue) == CFDateGetTypeID(), let date = rawValue as? Date {
+            return ISO8601DateFormatter().string(from: date)
+        }
 
         return nil
     }

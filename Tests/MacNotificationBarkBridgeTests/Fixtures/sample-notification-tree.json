@@ -24,6 +24,11 @@
             {
               "role": "AXStaticText",
               "value": "Bring the tickets."
+            },
+            {
+              "role": "AXStaticText",
+              "value": "Now",
+              "identifier": "notification-date"
             }
           ]
         }

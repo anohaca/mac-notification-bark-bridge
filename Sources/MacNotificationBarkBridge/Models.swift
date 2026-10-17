@@ -55,6 +55,7 @@ struct ForwardedNotification: Equatable, Hashable, Sendable {
     let title: String
     let body: String
     let identifier: String?
+    var timestamp: Date? = nil
 
     var signature: String {
         [

@@ -12,6 +12,8 @@ struct AppConfiguration: Equatable, Sendable {
     let promptForAccessibility: Bool
     let dedupeWindow: TimeInterval
     let launchAtLogin: Bool
+    var monitorPasswordPrompts: Bool = false
+    var maxNotificationAge: TimeInterval = 120
 
     static func parse(
         arguments: [String] = ProcessInfo.processInfo.arguments,
@@ -27,6 +29,8 @@ struct AppConfiguration: Equatable, Sendable {
         var fixturePath = environment["FIXTURE_PATH"]
         var promptForAccessibility = true
         var dedupeWindow = environment["DEDUPE_WINDOW"] ?? "300"
+        var monitorPasswordPrompts = false
+        var maxNotificationAge = environment["MAX_NOTIFICATION_AGE"] ?? "120"
 
         var index = 1
         while index < arguments.count {
@@ -54,8 +58,13 @@ struct AppConfiguration: Equatable, Sendable {
             case "--dedupe-window":
                 index += 1
                 dedupeWindow = try value(after: index, from: arguments, for: argument)
+            case "--max-notification-age":
+                index += 1
+                maxNotificationAge = try value(after: index, from: arguments, for: argument)
             case "--dry-run":
                 dryRun = true
+            case "--password-prompts":
+                monitorPasswordPrompts = true
             case "--once":
                 runOnce = true
             case "--dump-tree":
@@ -85,6 +94,9 @@ struct AppConfiguration: Equatable, Sendable {
         guard let dedupeSeconds = TimeInterval(dedupeWindow), dedupeSeconds > 0 else {
             throw BridgeError.invalidPollInterval(dedupeWindow)
         }
+        guard let maxAge = TimeInterval(maxNotificationAge), maxAge.isFinite, maxAge >= 0 else {
+            throw BridgeError.invalidFieldValue(field: "通知有效时间", reason: "请输入大于或等于 0 的有限秒数。")
+        }
 
         if let configuredFixturePath = fixturePath {
             let expanded = NSString(string: configuredFixturePath).expandingTildeInPath
@@ -105,7 +117,9 @@ struct AppConfiguration: Equatable, Sendable {
             fixturePath: fixturePath,
             promptForAccessibility: promptForAccessibility,
             dedupeWindow: dedupeSeconds,
-            launchAtLogin: false
+            launchAtLogin: false,
+            monitorPasswordPrompts: monitorPasswordPrompts,
+            maxNotificationAge: maxAge
         )
     }
 
@@ -131,7 +145,9 @@ struct AppConfiguration: Equatable, Sendable {
           --source-filter <text>       只转发来源、标题或正文包含该文本的通知
           --poll-interval <seconds>    轮询间隔，默认 2 秒
           --dedupe-window <seconds>    去重时间窗口，默认 300 秒
+          --max-notification-age <s>   通知有效时间，默认 120 秒；0 表示不限制
           --dry-run                    只打印匹配结果，不调用 Bark
+          --password-prompts           同时检测密码或系统授权弹窗
           --once                       扫描一次后退出
           --dump-tree                  以 JSON 打印抓到的辅助功能树
           --fixture <path>             使用保存好的树夹具，而不是读取实时通知中心
