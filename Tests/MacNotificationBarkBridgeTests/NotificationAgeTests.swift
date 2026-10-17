@@ -84,6 +84,28 @@ private let ageTestNow = Date(timeIntervalSince1970: 1_700_000_000)
     #expect(NotificationAgePolicy(maxAge: 120).rejectionReason(timestamp: notification.timestamp, now: ageTestNow) == "expired")
 }
 
+@Test func macOSAnonymousTimeSiblingIsMetadataButNamedBodyIsNot() throws {
+    let now = ISO8601DateFormatter().date(from: "2026-10-17T20:06:00+08:00")!
+    func card(body: String, time: String?) -> AccessibilityNode {
+        AccessibilityNode(role: "AXGroup", subrole: "AXNotificationCenterBanner", nodeDescription: "Example，Title", children: [
+            AccessibilityNode(role: "AXStaticText", value: "Title", identifier: "title"),
+            AccessibilityNode(role: "AXStaticText", value: body, identifier: "body"),
+        ] + (time.map { [AccessibilityNode(role: "AXStaticText", value: $0)] } ?? []))
+    }
+    let parser = NotificationParser()
+    let old = try #require(parser.parse(from: card(body: "Message body", time: "15:21"), sourceFilter: nil, now: now).first)
+    #expect(old.timestamp != nil)
+    #expect(NotificationAgePolicy(maxAge: 120).rejectionReason(timestamp: old.timestamp, now: now) == "expired")
+    #expect(old.body == "Message body")
+
+    let recent = try #require(parser.parse(from: card(body: "1 minute ago", time: "刚刚"), sourceFilter: nil, now: now).first)
+    #expect(recent.timestamp == now)
+    #expect(recent.body == "1 minute ago")
+    let undated = try #require(parser.parse(from: card(body: "1 minute ago", time: nil), sourceFilter: nil, now: now).first)
+    #expect(undated.timestamp == nil)
+    #expect(undated.body == "1 minute ago")
+}
+
 @Test func serviceFiltersStaleForwardsUnknownAndSupportsCustomAge() async throws {
     let tree = AccessibilityNode(role: "AXApplication", children: [
         ageCard("Fresh", time: "1分钟前"), ageCard("Old", time: "3分钟前"), ageCard("Unknown", time: nil),

@@ -99,12 +99,30 @@ struct NotificationParser: Sendable {
     }
 
     private func timestamp(in node: AccessibilityNode, now: Date) -> Date? {
+        if ["title", "body"].contains(node.identifier?.lowercased() ?? "") { return nil }
         if isTimeNode(node) {
-            let parser = NotificationTimeParser()
-            return [node.value, node.title, node.nodeDescription].compactMap { $0 }
-                .compactMap { parser.date(from: $0, now: now) }.min()
+            return timeValue(in: node, now: now)
         }
-        return node.children.compactMap { timestamp(in: $0, now: now) }.min()
+        return node.children.compactMap { child in
+            if isAnonymousCardTime(child, parent: node, now: now) { return timeValue(in: child, now: now) }
+            return timestamp(in: child, now: now)
+        }.min()
+    }
+
+    private func timeValue(in node: AccessibilityNode, now: Date) -> Date? {
+        let parser = NotificationTimeParser()
+        return [node.value, node.title, node.nodeDescription].compactMap { $0 }
+            .compactMap { parser.date(from: $0, now: now) }.min()
+    }
+
+    private func isAnonymousCardTime(_ node: AccessibilityNode, parent: AccessibilityNode, now: Date) -> Bool {
+        guard notificationSubroles.contains(parent.subrole ?? ""),
+              node.role == "AXStaticText", node.children.isEmpty,
+              node.identifier?.isEmpty ?? true else { return false }
+        // macOS places an unnamed time label beside explicitly named title/body fields.
+        let contentIDs = Set(parent.children.compactMap { $0.identifier?.lowercased() })
+        guard contentIDs.contains("title"), contentIDs.contains("body") else { return false }
+        return timeValue(in: node, now: now) != nil
     }
 
     private func candidate(from node: AccessibilityNode, now: Date) -> ForwardedNotification? {
@@ -112,7 +130,7 @@ struct NotificationParser: Sendable {
             return nil
         }
 
-        let rawTexts = leafTexts(in: node)
+        let rawTexts = leafTexts(in: node, now: now)
             .map(cleanText)
             .filter { !$0.isEmpty }
         let timestamp = timestamp(in: node, now: now)
@@ -215,13 +233,15 @@ struct NotificationParser: Sendable {
         return prefix
     }
 
-    private func leafTexts(in node: AccessibilityNode) -> [String] {
+    private func leafTexts(in node: AccessibilityNode, now: Date) -> [String] {
         if isTimeNode(node) { return [] }
         if node.children.isEmpty {
             return [node.title, node.value, node.nodeDescription].compactMap { $0 }
         }
 
-        return node.children.flatMap { leafTexts(in: $0) }
+        return node.children.flatMap { child in
+            isAnonymousCardTime(child, parent: node, now: now) ? [] : leafTexts(in: child, now: now)
+        }
     }
 
     private func cleanText(_ text: String) -> String {
