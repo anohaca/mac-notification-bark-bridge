@@ -56,6 +56,7 @@ struct ForwardedNotification: Equatable, Hashable, Sendable {
     let body: String
     let identifier: String?
     var timestamp: Date? = nil
+    var isNotificationCenterHistoryItem = false
 
     var signature: String {
         [

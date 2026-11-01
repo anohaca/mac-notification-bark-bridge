@@ -2,20 +2,23 @@ import Foundation
 import Testing
 @testable import MacNotificationBarkBridge
 
-@Test func passwordPromptRequiresDialogScopeAndNeverForwardsFieldValues() {
+@Test func passwordPromptRejectsAppOwnedPanelsAndRequiresSystemOrAgentContext() {
     let secureField = AccessibilityNode(
         role: "AXTextField", subrole: "AXSecureTextField", value: "must-never-leave-this-test"
     )
     let ordinaryWindow = AccessibilityNode(role: "AXWindow", children: [secureField])
-    let dialog = AccessibilityNode(role: "AXWindow", subrole: "AXDialog", children: [secureField])
+    let appDialog = AccessibilityNode(role: "AXWindow", subrole: "AXDialog", children: [secureField])
     let sheet = AccessibilityNode(role: "AXSheet", children: [secureField])
+    let systemDialog = AccessibilityNode(role: "AXWindow", subrole: "AXSystemDialog", children: [secureField])
     let classifier = PasswordPromptClassifier()
 
     #expect(!classifier.matches(ordinaryWindow))
-    #expect(classifier.matches(dialog))
-    #expect(classifier.matches(sheet))
+    #expect(!classifier.matches(appDialog))
+    #expect(!classifier.matches(sheet))
     #expect(!classifier.matches(AccessibilityNode(role: "AXWindow", subrole: "AXDialog")))
-    #expect(classifier.matches(AccessibilityNode(role: "AXWindow"), isAuthorizationAgent: true))
+    #expect(classifier.matches(systemDialog))
+    #expect(!classifier.matches(AccessibilityNode(role: "AXWindow"), isAuthorizationAgent: true))
+    #expect(classifier.matches(ordinaryWindow, isAuthorizationAgent: true))
 
     let prompt = PasswordPrompt(id: "1:10", processID: 1, applicationName: "Example")
     #expect(prompt.notification.source == "Example")

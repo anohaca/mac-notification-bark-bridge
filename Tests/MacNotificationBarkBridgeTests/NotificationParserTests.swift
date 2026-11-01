@@ -20,6 +20,32 @@ import Testing
     #expect(notifications.first?.body == "Meet at 8 PM\nBring the tickets.")
 }
 
+@Test func parserTreatsSeparatedSourceFilterTermsAsAlternatives() throws {
+    func card(source: String, title: String) -> AccessibilityNode {
+        AccessibilityNode(
+            role: "AXGroup",
+            subrole: "AXNotificationCenterBanner",
+            nodeDescription: "\(source)，\(title)",
+            children: [
+                AccessibilityNode(role: "AXStaticText", value: title),
+                AccessibilityNode(role: "AXStaticText", value: "Body for \(title)"),
+            ]
+        )
+    }
+    let tree = AccessibilityNode(role: "AXApplication", children: [
+        AccessibilityNode(role: "AXWindow", children: [
+            card(source: "Slack", title: "Build complete"),
+            card(source: "Messages", title: "New message"),
+        ]),
+    ])
+    let parser = NotificationParser()
+
+    #expect(parser.parse(from: tree, sourceFilter: "ChatGPT, Slack").map(\.source) == ["Slack"])
+    #expect(parser.parse(from: tree, sourceFilter: "ChatGPT，Slack；Messages").map(\.source) == ["Slack", "Messages"])
+    #expect(parser.parse(from: tree, sourceFilter: " , ; ChatGPT,  ").isEmpty)
+    #expect(parser.parse(from: tree, sourceFilter: nil).count == 2)
+}
+
 @Test func parserExtractsLongNotificationCenterStackUsingDescriptionAsSource() throws {
     let longBody = String(repeating: "Long codex reply. ", count: 40)
         .trimmingCharacters(in: .whitespacesAndNewlines)

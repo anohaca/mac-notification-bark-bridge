@@ -27,8 +27,10 @@ private let ageTestNow = Date(timeIntervalSince1970: 1_700_000_000)
     #expect(policy.rejectionReason(timestamp: ageTestNow.addingTimeInterval(-120), now: ageTestNow) == nil)
     #expect(policy.rejectionReason(timestamp: ageTestNow.addingTimeInterval(-121), now: ageTestNow) == "expired")
     #expect(policy.rejectionReason(timestamp: nil, now: ageTestNow) == nil)
+    #expect(policy.rejectionReason(timestamp: nil, now: ageTestNow, rejectUnknownTimestamp: true) == "time_unknown")
     #expect(policy.rejectionReason(timestamp: ageTestNow.addingTimeInterval(60), now: ageTestNow) == "time_in_future")
     #expect(NotificationAgePolicy(maxAge: 0).rejectionReason(timestamp: nil, now: ageTestNow) == nil)
+    #expect(NotificationAgePolicy(maxAge: 0).rejectionReason(timestamp: nil, now: ageTestNow, rejectUnknownTimestamp: true) == nil)
 }
 
 @Test func parserPreservesCardTimeThroughNestedDuplicateAndDoesNotMixCards() throws {
@@ -130,6 +132,40 @@ private let ageTestNow = Date(timeIntervalSince1970: 1_700_000_000)
     configuration.maxNotificationAge = 0
     var disabled = BridgeService(configuration: configuration, snapshotProvider: AgeTreeProvider(tree: tree), barkClient: client)
     #expect(try await disabled.runOnce().count == 3)
+}
+
+@Test func serviceDropsUnknownHistoryTimesButKeepsUnknownLiveBanners() async throws {
+    let history = AccessibilityNode(role: "AXApplication", children: [
+        AccessibilityNode(role: "AXWindow", children: [
+            AccessibilityNode(role: "AXGroup", identifier: "AXNotificationListItems", children: [
+                ageCard("Historic", time: nil),
+            ]),
+        ]),
+    ])
+    let liveBanner = AccessibilityNode(role: "AXApplication", children: [
+        AccessibilityNode(role: "AXWindow", children: [ageCard("Live", time: nil)]),
+    ])
+    let configuration = try AppConfiguration.parse(
+        arguments: ["bridge", "--device-key", "test", "--dry-run"],
+        environment: [:]
+    )
+    let client = BarkClient(baseURL: configuration.barkBaseURL, deviceKey: "test", sender: { _ in
+        Issue.record("Dry-run must not send Bark")
+        throw URLError(.badServerResponse)
+    })
+    var historyService = BridgeService(
+        configuration: configuration,
+        snapshotProvider: AgeTreeProvider(tree: history),
+        barkClient: client
+    )
+    var bannerService = BridgeService(
+        configuration: configuration,
+        snapshotProvider: AgeTreeProvider(tree: liveBanner),
+        barkClient: client
+    )
+
+    #expect(try await historyService.runOnce().isEmpty)
+    #expect(try await bannerService.runOnce().map(\.title) == ["Live"])
 }
 
 @Test func notificationAgeConfigurationPersistsAndRejectsInvalidInput() throws {

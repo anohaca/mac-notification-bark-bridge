@@ -35,8 +35,11 @@ struct NotificationParser: Sendable {
     ]
 
     func parse(from root: AccessibilityNode, sourceFilter: String?, now: Date = Date()) -> [ForwardedNotification] {
-        let filter = sourceFilter?.fingerprint
-        let matches = collectCandidates(from: root, now: now)
+        let filterTerms = sourceFilter?
+            .components(separatedBy: CharacterSet(charactersIn: ",，;；\n\r"))
+            .map(\.fingerprint)
+            .filter { !$0.isEmpty } ?? []
+        let matches = collectCandidates(from: root, now: now, isInHistoryList: false)
 
         var indices: [String: Int] = [:]
         var exactUnique: [ForwardedNotification] = []
@@ -44,7 +47,12 @@ struct NotificationParser: Sendable {
             if let index = indices[notification.signature] {
                 // Prefer real time metadata over an undated representation of the same node.
                 if exactUnique[index].timestamp == nil && notification.timestamp != nil {
-                    exactUnique[index] = notification
+                    var resolved = notification
+                    resolved.isNotificationCenterHistoryItem = exactUnique[index].isNotificationCenterHistoryItem
+                        || notification.isNotificationCenterHistoryItem
+                    exactUnique[index] = resolved
+                } else if notification.isNotificationCenterHistoryItem {
+                    exactUnique[index].isNotificationCenterHistoryItem = true
                 }
             } else {
                 indices[notification.signature] = exactUnique.count
@@ -63,24 +71,30 @@ struct NotificationParser: Sendable {
             }
 
             return !strongerTitleBodySignatures.contains(notification.titleBodySignature)
-        }.filter { matchesFilter($0, filter: filter) }
+        }.filter { matchesFilter($0, terms: filterTerms) }
     }
 
     private func collectCandidates(
         from node: AccessibilityNode,
-        now: Date
+        now: Date,
+        isInHistoryList: Bool
     ) -> [ForwardedNotification] {
+        let isInHistoryList = isInHistoryList || node.identifier?.fingerprint == "axnotificationlistitems"
         if let subrole = node.subrole, notificationSubroles.contains(subrole) {
             let nestedCards = node.children.flatMap { notificationContainers(in: $0) }
             if !nestedCards.isEmpty {
-                return nestedCards.flatMap { collectCandidates(from: $0, now: now) }
+                return nestedCards.flatMap {
+                    collectCandidates(from: $0, now: now, isInHistoryList: isInHistoryList)
+                }
             }
             // Parse a card as one unit, so nested content groups cannot lose its metadata.
-            return candidate(from: node, now: now).map { [$0] } ?? []
+            return candidate(from: node, now: now, isInHistoryList: isInHistoryList).map { [$0] } ?? []
         }
-        let childMatches = node.children.flatMap { collectCandidates(from: $0, now: now) }
+        let childMatches = node.children.flatMap {
+            collectCandidates(from: $0, now: now, isInHistoryList: isInHistoryList)
+        }
         if !childMatches.isEmpty { return childMatches }
-        return candidate(from: node, now: now).map { [$0] } ?? []
+        return candidate(from: node, now: now, isInHistoryList: isInHistoryList).map { [$0] } ?? []
     }
 
     private func notificationContainers(in node: AccessibilityNode) -> [AccessibilityNode] {
@@ -125,7 +139,11 @@ struct NotificationParser: Sendable {
         return timeValue(in: node, now: now) != nil
     }
 
-    private func candidate(from node: AccessibilityNode, now: Date) -> ForwardedNotification? {
+    private func candidate(
+        from node: AccessibilityNode,
+        now: Date,
+        isInHistoryList: Bool
+    ) -> ForwardedNotification? {
         guard let role = node.role, containerRoles.contains(role) else {
             return nil
         }
@@ -139,7 +157,12 @@ struct NotificationParser: Sendable {
             .stableUniqued()
 
         if let subrole = node.subrole, notificationSubroles.contains(subrole) {
-            return notificationCenterCandidate(from: node, texts: texts, timestamp: timestamp)
+            return notificationCenterCandidate(
+                from: node,
+                texts: texts,
+                timestamp: timestamp,
+                isInHistoryList: isInHistoryList
+            )
         }
 
         guard role == "AXGroup" || role == "AXRow" else { return nil }
@@ -174,14 +197,16 @@ struct NotificationParser: Sendable {
             title: title,
             body: body,
             identifier: node.identifier,
-            timestamp: timestamp
+            timestamp: timestamp,
+            isNotificationCenterHistoryItem: isInHistoryList
         )
     }
 
     private func notificationCenterCandidate(
         from node: AccessibilityNode,
         texts: [String],
-        timestamp: Date?
+        timestamp: Date?,
+        isInHistoryList: Bool
     ) -> ForwardedNotification? {
         guard texts.count >= 2 else {
             return nil
@@ -200,7 +225,8 @@ struct NotificationParser: Sendable {
             title: title,
             body: body,
             identifier: node.identifier,
-            timestamp: timestamp
+            timestamp: timestamp,
+            isNotificationCenterHistoryItem: isInHistoryList
         )
     }
 
@@ -249,8 +275,8 @@ struct NotificationParser: Sendable {
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
     }
 
-    private func matchesFilter(_ notification: ForwardedNotification, filter: String?) -> Bool {
-        guard let filter, !filter.isEmpty else {
+    private func matchesFilter(_ notification: ForwardedNotification, terms: [String]) -> Bool {
+        guard !terms.isEmpty else {
             return true
         }
 
@@ -260,7 +286,7 @@ struct NotificationParser: Sendable {
             notification.body,
         ].joined(separator: "\n").fingerprint
 
-        return haystack.contains(filter)
+        return terms.contains { haystack.contains($0) }
     }
 
 }

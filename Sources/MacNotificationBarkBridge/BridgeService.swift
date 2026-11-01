@@ -1,6 +1,9 @@
 import Foundation
 
 struct BridgeService: Sendable {
+    private let timestampResolutionRetryCount = 2
+    private let timestampResolutionRetryDelayNanoseconds: UInt64 = 250_000_000
+
     private struct ScanSummary: Equatable, Sendable {
         let panelVisible: Bool
         let topLevelChildren: Int
@@ -60,7 +63,7 @@ struct BridgeService: Sendable {
 
     mutating func runOnce() async throws -> [ForwardedNotification] {
         let promptNotifications = try await forwardPasswordPrompts()
-        let tree: AccessibilityNode
+        var tree: AccessibilityNode
         do {
             tree = try await snapshotProvider.snapshot()
         } catch {
@@ -79,17 +82,66 @@ struct BridgeService: Sendable {
             }
         }
 
-        let scanTime = Date()
-        let notifications = parser.parse(from: tree, sourceFilter: configuration.sourceFilter, now: scanTime)
+        var scanTime = Date()
+        var notifications = parser.parse(from: tree, sourceFilter: configuration.sourceFilter, now: scanTime)
+        if configuration.maxNotificationAge > 0, tree.notificationPanelVisible {
+            var totalResolvedCount = 0
+            var retryAttempts = 0
+            for attempt in 1...timestampResolutionRetryCount {
+                let unresolved = notifications.filter { $0.timestamp == nil }
+                guard !unresolved.isEmpty else { break }
+
+                retryAttempts = attempt
+                try await Task.sleep(nanoseconds: timestampResolutionRetryDelayNanoseconds)
+                let retryTree: AccessibilityNode
+                do {
+                    retryTree = try await snapshotProvider.snapshot()
+                } catch {
+                    await logger.log(.warning, "scan.timestamp_retry_failed attempt=\(attempt) error=\(describe(error))")
+                    break
+                }
+                await logger.storeSnapshot(retryTree)
+                tree = retryTree
+                scanTime = Date()
+                let retryNotifications = parser.parse(
+                    from: retryTree,
+                    sourceFilter: configuration.sourceFilter,
+                    now: scanTime
+                )
+                let knownByHash = Dictionary(
+                    grouping: retryNotifications.filter { $0.timestamp != nil },
+                    by: \.exactDedupeHash
+                )
+                var resolvedCount = 0
+                notifications = notifications.map { notification in
+                    guard notification.timestamp == nil,
+                          let known = knownByHash[notification.exactDedupeHash]?.first else {
+                        return notification
+                    }
+                    resolvedCount += 1
+                    return known
+                }
+                totalResolvedCount += resolvedCount
+                if resolvedCount == unresolved.count { break }
+            }
+            if totalResolvedCount > 0 {
+                await logger.log(.info, "scan.timestamp_resolved attempts=\(retryAttempts) count=\(totalResolvedCount)")
+            }
+        }
+
         let agePolicy = NotificationAgePolicy(maxAge: configuration.maxNotificationAge)
         var rejections: [String: Int] = [:]
         let eligible = notifications.filter { notification in
-            guard let reason = agePolicy.rejectionReason(timestamp: notification.timestamp, now: scanTime) else { return true }
+            guard let reason = agePolicy.rejectionReason(
+                timestamp: notification.timestamp,
+                now: scanTime,
+                rejectUnknownTimestamp: notification.isNotificationCenterHistoryItem
+            ) else { return true }
             rejections[reason, default: 0] += 1
             return false
         }
         let unknownCount = notifications.filter { $0.timestamp == nil }.count
-        let ageSummary = "scan.age_filter allowed=\(eligible.count) expired=\(rejections["expired", default: 0]) timeUnknown=\(unknownCount) future=\(rejections["time_in_future", default: 0]) invalidTime=\(rejections["time_invalid", default: 0]) maxAgeSeconds=\(configuration.maxNotificationAge) unknownPolicy=forward"
+        let ageSummary = "scan.age_filter allowed=\(eligible.count) expired=\(rejections["expired", default: 0]) timeUnknown=\(unknownCount) unknownHistoryDropped=\(rejections["time_unknown", default: 0]) future=\(rejections["time_in_future", default: 0]) invalidTime=\(rejections["time_invalid", default: 0]) maxAgeSeconds=\(configuration.maxNotificationAge) unknownPolicy=history_drop_live_forward"
         if ageSummary != lastAgeFilterSummary {
             await logger.log(.info, ageSummary)
             lastAgeFilterSummary = ageSummary
@@ -121,7 +173,11 @@ struct BridgeService: Sendable {
 
         var delivered: [ForwardedNotification] = []
         for notification in fresh {
-            if let reason = agePolicy.rejectionReason(timestamp: notification.timestamp, now: Date()) {
+            if let reason = agePolicy.rejectionReason(
+                timestamp: notification.timestamp,
+                now: Date(),
+                rejectUnknownTimestamp: notification.isNotificationCenterHistoryItem
+            ) {
                 await logger.log(.info, "scan.not_sent reason=\(reason) hash=\(notification.exactDedupeHash)")
                 continue
             }

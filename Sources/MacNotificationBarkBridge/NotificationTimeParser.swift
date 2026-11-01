@@ -76,9 +76,13 @@ struct NotificationTimeParser: Sendable {
 struct NotificationAgePolicy: Sendable {
     let maxAge: TimeInterval
 
-    func rejectionReason(timestamp: Date?, now: Date) -> String? {
+    func rejectionReason(
+        timestamp: Date?,
+        now: Date,
+        rejectUnknownTimestamp: Bool = false
+    ) -> String? {
         if maxAge == 0 { return nil }
-        guard let timestamp else { return nil }
+        guard let timestamp else { return rejectUnknownTimestamp ? "time_unknown" : nil }
         let age = now.timeIntervalSince(timestamp)
         guard age.isFinite else { return "time_invalid" }
         if age < 0 { return "time_in_future" }

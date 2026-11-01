@@ -73,11 +73,11 @@ final class ConfigurationWindowController: NSWindowController, NSWindowDelegate 
     private func buildContentView() -> NSView {
         deviceKeyField.placeholderString = "你的 Bark 设备 Key"
         barkBaseURLField.placeholderString = "https://api.day.app"
-        sourceFilterField.placeholderString = "消息、Slack、邮件…"
+        sourceFilterField.placeholderString = "ChatGPT, Surge（多个用逗号分隔）"
         pollIntervalField.placeholderString = "2"
         dedupeWindowField.placeholderString = "300"
         maxNotificationAgeField.placeholderString = "120（0 表示不限制）"
-        maxNotificationAgeField.toolTip = "默认 120 秒；0 表示不限制。时间未知的通知仍转发，并记入日志。"
+        maxNotificationAgeField.toolTip = "默认 120 秒；0 表示不限制。历史列表的未知时间会跳过，实时横幅仍转发。"
 
         let introLabel = NSTextField(wrappingLabelWithString:
             "在这里修改转发配置。保存后会重写配置文件，并立即重新加载监听状态。"

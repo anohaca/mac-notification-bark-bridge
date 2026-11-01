@@ -25,10 +25,11 @@
 系统只显示「几分钟前」时只能按该显示精度估算，不能得到精确到秒的原始发送时间。
 
 普通正文中的「几分钟前」等文字不会作为时间证据。若系统只暴露无时间标识的普通文本节点，
-且不能根据上述卡片结构识别，程序会按时间未知处理。启用限制后，超过时限或时间在未来的通知会跳过；时间未知的仍然转发，
-并写入 `scan.time_unknown action=forward` 日志，不会用「第一次扫描时间」冒充发送时间。
-因此，没有时间信息的旧通知也可能被转发。相应计数会写入 `scan.age_filter` 的 `expired`、
-`timeUnknown`、`future` 字段，汇总日志只在过滤结果变化时更新。
+且不能根据上述卡片结构识别，程序会按时间未知处理。启用限制后，超过时限或时间在未来的通知会跳过；
+通知中心历史列表中的未知时间通知也会跳过，避免打开通知中心时重发旧通知。列表外的实时横幅即使时间未知仍会转发，
+并写入 `scan.time_unknown action=forward` 日志。关闭时间过滤（设为 `0`）时，历史列表的未知时间通知也会转发。
+程序不会用「第一次扫描时间」冒充发送时间。`scan.age_filter` 会记录 `expired`、`timeUnknown`、
+`unknownHistoryDropped`、`future` 等计数，汇总日志只在过滤结果变化时更新。
 发送排队中的通知会在实际发出前再次校验时间。
 时间标签不进入正文和 hash，因此通知从「刚刚」变成「1分钟前」不会改变去重依据。
 密码/授权弹窗提醒不受通知有效时间限制。
@@ -184,10 +185,10 @@ build/MacNotificationBarkBridge.app
 | --- | --- |
 | `deviceKey` | Bark 设备 Key，必填 |
 | `barkBaseURL` | Bark 服务地址，默认 `https://api.day.app` |
-| `sourceFilter` | 只转发来源、标题或正文中包含该文本的通知；留空表示不过滤 |
+| `sourceFilter` | 只转发来源、标题或正文包含任一关键词的通知；多个关键词用逗号、分号或换行分隔，例如 `ChatGPT, Surge`；留空表示不过滤 |
 | `pollInterval` | 轮询间隔，单位秒，默认 `2` |
 | `dedupeWindow` | 相同消息 hash 的去重窗口，单位秒，默认 `300` |
-| `maxNotificationAge` | 通知有效时间，单位秒，默认 `120`；`0` 表示不限制。未知时间通知仍转发并记录日志 |
+| `maxNotificationAge` | 通知有效时间，单位秒，默认 `120`；`0` 表示不限制。启用时历史列表未知时间会跳过，实时横幅未知时间仍转发 |
 | `dryRun` | 为 `true` 时只记日志，不真正调用 Bark |
 | `promptForAccessibility` | 是否在需要时主动触发系统辅助功能授权提示 |
 | `launchAtLogin` | 是否在登录 macOS 后自动启动 App，默认 `false` |
@@ -249,7 +250,7 @@ swift run mac-notification-bark-bridge \
 
 - `--device-key <key>`
 - `--bark-base-url <url>`
-- `--source-filter <text>`
+- `--source-filter <text>`（支持 `ChatGPT, Surge` 这样的多个关键词）
 - `--poll-interval <seconds>`
 - `--dedupe-window <seconds>`
 - `--dry-run`

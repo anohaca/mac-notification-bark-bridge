@@ -142,7 +142,7 @@ struct AppConfiguration: Equatable, Sendable {
         可选：
           --menu-bar                   强制以菜单栏应用模式启动
           --bark-base-url <url>        Bark 服务地址，默认 https://api.day.app
-          --source-filter <text>       只转发来源、标题或正文包含该文本的通知
+          --source-filter <text>       多个关键词用逗号分隔，匹配任意一个即转发
           --poll-interval <seconds>    轮询间隔，默认 2 秒
           --dedupe-window <seconds>    去重时间窗口，默认 300 秒
           --max-notification-age <s>   通知有效时间，默认 120 秒；0 表示不限制

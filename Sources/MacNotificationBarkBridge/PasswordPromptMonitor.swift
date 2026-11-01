@@ -29,12 +29,10 @@ protocol PasswordPromptProviding: Sendable {
 
 struct PasswordPromptClassifier: Sendable {
     func matches(_ node: AccessibilityNode, isAuthorizationAgent: Bool = false) -> Bool {
-        if isAuthorizationAgent && node.role == "AXWindow" {
+        if isAuthorizationAgent, node.role == "AXWindow", containsSecureField(node) {
             return true
         }
-        let isDialog = node.role == "AXSheet"
-            || node.subrole == "AXDialog" || node.subrole == "AXSystemDialog"
-        if isDialog && containsSecureField(node) {
+        if node.subrole == "AXSystemDialog" && containsSecureField(node) {
             return true
         }
         return node.children.contains { matches($0) }
@@ -115,14 +113,13 @@ struct AccessibilityPasswordPromptProvider: PasswordPromptProviding {
         if subrole == "AXSecureTextField" {
             return AccessibilityNode(role: role, subrole: subrole)
         }
-        let modal = attribute(kAXModalAttribute, from: element, complete: &complete) as? Bool ?? false
         let children = elements(kAXChildrenAttribute, from: element, complete: &complete)
         var nodes: [AccessibilityNode] = []
         for child in children {
             guard budget > 0, Date() < deadline, !Task.isCancelled else { complete = false; break }
             nodes.append(metadata(child, depth: depth + 1, budget: &budget, deadline: deadline, complete: &complete))
         }
-        return AccessibilityNode(role: role, subrole: modal ? "AXDialog" : subrole, children: nodes)
+        return AccessibilityNode(role: role, subrole: subrole, children: nodes)
     }
 
     private func attribute(_ name: String, from element: AXUIElement, complete: inout Bool) -> CFTypeRef? {
